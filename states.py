@@ -1,12 +1,13 @@
 from aiogram.fsm.state import State, StatesGroup
 
 
-class AddOrg(StatesGroup):
+class CreateOrg(StatesGroup):
     name = State()
 
 
 class RenameOrg(StatesGroup):
     name = State()
+
 
 
 class AddParticipant(StatesGroup):
@@ -22,10 +23,5 @@ class AddCardToParticipant(StatesGroup):
     cards = State()
 
 
-class JoinOrg(StatesGroup):
-    unique_id = State()
-
-
-class UserAddCard(StatesGroup):
-    fio = State()
-    cards = State()
+class BlockUser(StatesGroup):
+    telegram_id = State()
