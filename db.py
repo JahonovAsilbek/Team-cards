@@ -1,7 +1,17 @@
 import os
 import asyncpg
+from cryptography.fernet import Fernet
 
 pool: asyncpg.Pool | None = None
+fernet = Fernet(os.environ["ENCRYPTION_KEY"].encode())
+
+
+def encrypt_card(card_number: str) -> str:
+    return fernet.encrypt(card_number.encode()).decode()
+
+
+def decrypt_card(encrypted: str) -> str:
+    return fernet.decrypt(encrypted.encode()).decode()
 
 
 async def init_db():
@@ -28,8 +38,12 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS cards (
             id SERIAL PRIMARY KEY,
             participant_id INTEGER REFERENCES participants(id) ON DELETE CASCADE,
-            card_number VARCHAR(16) NOT NULL
+            card_number TEXT NOT NULL
         )
+    """)
+    # Eski VARCHAR(16) ni TEXT ga o'zgartirish
+    await pool.execute("""
+        ALTER TABLE cards ALTER COLUMN card_number TYPE TEXT
     """)
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS user_sessions (
@@ -46,6 +60,18 @@ async def init_db():
     await pool.execute("""
         ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS username TEXT
     """)
+    # Eski shifrlanmagan kartalarni shifrlash (bir martalik migratsiya)
+    rows = await pool.fetch("SELECT id, card_number FROM cards")
+    for row in rows:
+        try:
+            decrypt_card(row["card_number"])
+        except Exception:
+            # Shifrlanmagan — shifrlash kerak
+            encrypted = encrypt_card(row["card_number"])
+            await pool.execute(
+                "UPDATE cards SET card_number = $1 WHERE id = $2",
+                encrypted, row["id"]
+            )
 
 
 async def close_db():
@@ -122,16 +148,26 @@ async def delete_participant(participant_id: int):
 # --- Cards ---
 
 async def add_card(participant_id: int, card_number: str) -> int:
+    encrypted = encrypt_card(card_number)
     return await pool.fetchval(
         "INSERT INTO cards (participant_id, card_number) VALUES ($1, $2) RETURNING id",
-        participant_id, card_number
+        participant_id, encrypted
     )
 
 
 async def get_cards(participant_id: int):
-    return await pool.fetch(
+    rows = await pool.fetch(
         "SELECT * FROM cards WHERE participant_id = $1 ORDER BY id", participant_id
     )
+    result = []
+    for row in rows:
+        row = dict(row)
+        try:
+            row["card_number"] = decrypt_card(row["card_number"])
+        except Exception:
+            pass  # Eski shifrlanmagan kartalar uchun
+        result.append(row)
+    return result
 
 
 async def delete_card(card_id: int):
