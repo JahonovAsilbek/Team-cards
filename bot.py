@@ -1,9 +1,12 @@
 import os
 import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
+
+from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
+
+import db
+from handlers import admin, user, inline
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
@@ -12,31 +15,29 @@ PORT = int(os.environ.get("PORT", 10000))
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+dp.include_router(admin.router)
+dp.include_router(user.router)
+dp.include_router(inline.router)
+
 logging.basicConfig(level=logging.INFO)
 
 
-@dp.message(CommandStart())
-async def start(message: types.Message):
-    await message.answer("Salom! Menga text yuboring, men saqlab qo'yaman.")
-
-
-@dp.message()
-async def save_text(message: types.Message):
-    # Textni faylga saqlash
-    with open("saved_texts.txt", "a", encoding="utf-8") as f:
-        f.write(f"{message.from_user.id}: {message.text}\n")
-    await message.answer("Saqlandi!")
-
-
 async def on_startup(app):
+    await db.init_db()
     webhook_url = f"{RENDER_URL}/webhook"
     await bot.set_webhook(webhook_url)
     logging.info(f"Webhook set: {webhook_url}")
 
 
+async def on_shutdown(app):
+    await db.close_db()
+    await bot.session.close()
+
+
 def main():
     app = web.Application()
     app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path="/webhook")

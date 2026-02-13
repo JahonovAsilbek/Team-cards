@@ -1,0 +1,135 @@
+import os
+import asyncpg
+
+pool: asyncpg.Pool | None = None
+
+
+async def init_db():
+    global pool
+    pool = await asyncpg.create_pool(os.environ["DATABASE_URL"], min_size=1, max_size=5)
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS organizations (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            unique_id VARCHAR(16) UNIQUE NOT NULL
+        )
+    """)
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS participants (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+            fio TEXT NOT NULL
+        )
+    """)
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS cards (
+            id SERIAL PRIMARY KEY,
+            participant_id INTEGER REFERENCES participants(id) ON DELETE CASCADE,
+            card_number VARCHAR(16) NOT NULL
+        )
+    """)
+    await pool.execute("""
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            telegram_id BIGINT PRIMARY KEY,
+            org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE
+        )
+    """)
+
+
+async def close_db():
+    global pool
+    if pool:
+        await pool.close()
+
+
+# --- Organizations ---
+
+async def create_org(name: str, unique_id: str) -> int:
+    return await pool.fetchval(
+        "INSERT INTO organizations (name, unique_id) VALUES ($1, $2) RETURNING id",
+        name, unique_id
+    )
+
+
+async def get_all_orgs():
+    return await pool.fetch("SELECT * FROM organizations ORDER BY id")
+
+
+async def get_org(org_id: int):
+    return await pool.fetchrow("SELECT * FROM organizations WHERE id = $1", org_id)
+
+
+async def get_org_by_unique_id(unique_id: str):
+    return await pool.fetchrow("SELECT * FROM organizations WHERE unique_id = $1", unique_id)
+
+
+async def rename_org(org_id: int, new_name: str):
+    await pool.execute("UPDATE organizations SET name = $1 WHERE id = $2", new_name, org_id)
+
+
+async def delete_org(org_id: int):
+    await pool.execute("DELETE FROM organizations WHERE id = $1", org_id)
+
+
+# --- Participants ---
+
+async def create_participant(org_id: int, fio: str) -> int:
+    return await pool.fetchval(
+        "INSERT INTO participants (org_id, fio) VALUES ($1, $2) RETURNING id",
+        org_id, fio
+    )
+
+
+async def get_participants(org_id: int):
+    return await pool.fetch(
+        "SELECT * FROM participants WHERE org_id = $1 ORDER BY id", org_id
+    )
+
+
+async def get_participant(participant_id: int):
+    return await pool.fetchrow("SELECT * FROM participants WHERE id = $1", participant_id)
+
+
+async def rename_participant(participant_id: int, new_fio: str):
+    await pool.execute(
+        "UPDATE participants SET fio = $1 WHERE id = $2", new_fio, participant_id
+    )
+
+
+async def delete_participant(participant_id: int):
+    await pool.execute("DELETE FROM participants WHERE id = $1", participant_id)
+
+
+# --- Cards ---
+
+async def add_card(participant_id: int, card_number: str) -> int:
+    return await pool.fetchval(
+        "INSERT INTO cards (participant_id, card_number) VALUES ($1, $2) RETURNING id",
+        participant_id, card_number
+    )
+
+
+async def get_cards(participant_id: int):
+    return await pool.fetch(
+        "SELECT * FROM cards WHERE participant_id = $1 ORDER BY id", participant_id
+    )
+
+
+async def delete_card(card_id: int):
+    await pool.execute("DELETE FROM cards WHERE id = $1", card_id)
+
+
+# --- User Sessions ---
+
+async def set_user_session(telegram_id: int, org_id: int):
+    await pool.execute(
+        """INSERT INTO user_sessions (telegram_id, org_id) VALUES ($1, $2)
+           ON CONFLICT (telegram_id) DO UPDATE SET org_id = $2""",
+        telegram_id, org_id
+    )
+
+
+async def get_user_session(telegram_id: int):
+    return await pool.fetchrow(
+        "SELECT * FROM user_sessions WHERE telegram_id = $1", telegram_id
+    )
