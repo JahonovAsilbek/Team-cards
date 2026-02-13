@@ -6,7 +6,10 @@ pool: asyncpg.Pool | None = None
 
 async def init_db():
     global pool
-    pool = await asyncpg.create_pool(os.environ["DATABASE_URL"], min_size=1, max_size=5)
+    pool = await asyncpg.create_pool(
+        os.environ["DATABASE_URL"], min_size=1, max_size=5,
+        statement_cache_size=0
+    )
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS organizations (
             id SERIAL PRIMARY KEY,
@@ -31,8 +34,17 @@ async def init_db():
     await pool.execute("""
         CREATE TABLE IF NOT EXISTS user_sessions (
             telegram_id BIGINT PRIMARY KEY,
-            org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE
+            org_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+            full_name TEXT,
+            username TEXT
         )
+    """)
+    # Eski jadvalga yangi ustunlar qo'shish
+    await pool.execute("""
+        ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS full_name TEXT
+    """)
+    await pool.execute("""
+        ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS username TEXT
     """)
 
 
@@ -128,11 +140,13 @@ async def delete_card(card_id: int):
 
 # --- User Sessions ---
 
-async def set_user_session(telegram_id: int, org_id: int):
+async def set_user_session(telegram_id: int, org_id: int, full_name: str = None, username: str = None):
     await pool.execute(
-        """INSERT INTO user_sessions (telegram_id, org_id) VALUES ($1, $2)
-           ON CONFLICT (telegram_id) DO UPDATE SET org_id = $2""",
-        telegram_id, org_id
+        """INSERT INTO user_sessions (telegram_id, org_id, full_name, username)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (telegram_id) DO UPDATE
+           SET org_id = $2, full_name = $3, username = $4""",
+        telegram_id, org_id, full_name, username
     )
 
 
@@ -140,3 +154,13 @@ async def get_user_session(telegram_id: int):
     return await pool.fetchrow(
         "SELECT * FROM user_sessions WHERE telegram_id = $1", telegram_id
     )
+
+
+async def get_org_users(org_id: int):
+    return await pool.fetch(
+        "SELECT * FROM user_sessions WHERE org_id = $1 ORDER BY telegram_id", org_id
+    )
+
+
+async def delete_user_session(telegram_id: int):
+    await pool.execute("DELETE FROM user_sessions WHERE telegram_id = $1", telegram_id)

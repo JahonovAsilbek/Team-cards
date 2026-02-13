@@ -22,6 +22,10 @@ class AddCardToParticipant(StatesGroup):
     cards = State()
 
 
+class JoinOrg(StatesGroup):
+    unique_id = State()
+
+
 class UserAddCard(StatesGroup):
     fio = State()
     cards = State()

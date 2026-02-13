@@ -23,6 +23,7 @@ def org_detail(org_id: int):
         [InlineKeyboardButton(text="O'chirish", callback_data=f"delete_org:{org_id}")],
         [InlineKeyboardButton(text="Ishtirokchi qo'shish", callback_data=f"add_participant:{org_id}")],
         [InlineKeyboardButton(text="Ishtirokchilar ro'yxati", callback_data=f"list_participants:{org_id}")],
+        [InlineKeyboardButton(text="Foydalanuvchilar", callback_data=f"list_users:{org_id}")],
         [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="list_orgs")],
     ])
 
@@ -61,6 +62,27 @@ def card_list_for_delete(cards, participant_id: int):
 def done_button():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Tayyor", callback_data="done")],
+    ])
+
+
+def user_list(users, org_id: int):
+    buttons = []
+    for u in users:
+        name = u["full_name"] or str(u["telegram_id"])
+        buttons.append([
+            InlineKeyboardButton(text=name, callback_data=f"noop"),
+            InlineKeyboardButton(text="❌", callback_data=f"remove_user:{u['telegram_id']}:{org_id}"),
+        ])
+    buttons.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data=f"org:{org_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def join_request(telegram_id: int, org_id: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Ruxsat", callback_data=f"approve:{telegram_id}:{org_id}"),
+            InlineKeyboardButton(text="❌ Rad etish", callback_data=f"deny:{telegram_id}:{org_id}"),
+        ],
     ])
 
 

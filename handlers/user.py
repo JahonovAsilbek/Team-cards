@@ -1,33 +1,70 @@
+import os
+
 from aiogram import Router, F
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 import db
-from states import UserAddCard
-from keyboards import done_button, format_card
+from states import UserAddCard, JoinOrg
+from keyboards import done_button, format_card, join_request
 
 router = Router()
+ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
+
+
+async def process_join(message: Message, unique_id: str):
+    """Tashkilotga ulanish logikasi"""
+    org = await db.get_org_by_unique_id(unique_id)
+    if not org:
+        await message.answer("Tashkilot topilmadi. Qayta tekshirib ko'ring.")
+        return
+
+    # Admin to'g'ridan-to'g'ri ulanadi
+    if message.from_user.id == ADMIN_ID:
+        await db.set_user_session(
+            message.from_user.id, org["id"],
+            message.from_user.full_name, message.from_user.username
+        )
+        await message.answer(f"Siz «{org['name']}» ga ulandingiz!")
+        return
+
+    # Allaqachon ulangan bo'lsa
+    session = await db.get_user_session(message.from_user.id)
+    if session and session["org_id"] == org["id"]:
+        await message.answer(f"Siz allaqachon «{org['name']}» ga ulangansiz!")
+        return
+
+    # Adminga so'rov yuborish
+    user = message.from_user
+    user_name = user.full_name
+    username = f" (@{user.username})" if user.username else ""
+
+    await message.bot.send_message(
+        ADMIN_ID,
+        f"Yangi ulanish so'rovi!\n\n"
+        f"Foydalanuvchi: {user_name}{username}\n"
+        f"ID: `{user.id}`\n"
+        f"Tashkilot: {org['name']}",
+        parse_mode="Markdown",
+        reply_markup=join_request(user.id, org["id"])
+    )
+
+    await message.answer(
+        f"«{org['name']}» ga ulanish so'rovi yuborildi.\n"
+        f"Admin tasdiqlashini kuting."
+    )
 
 
 @router.message(CommandStart(deep_link=True))
-async def cmd_start_with_link(message: Message, command: CommandObject):
-    unique_id = command.args
-    if not unique_id or len(unique_id) != 16:
-        await message.answer("Noto'g'ri havola. Tashkilot topilmadi.")
-        return
-
-    org = await db.get_org_by_unique_id(unique_id)
-    if not org:
-        await message.answer("Tashkilot topilmadi.")
-        return
-
-    await db.set_user_session(message.from_user.id, org["id"])
-    await message.answer(f"Siz «{org['name']}» ga ulandingiz!")
+async def cmd_start_with_link(message: Message, command: CommandObject, state: FSMContext):
+    await state.clear()
+    await process_join(message, command.args)
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
     session = await db.get_user_session(message.from_user.id)
     if session:
         org = await db.get_org(session["org_id"])
@@ -37,17 +74,29 @@ async def cmd_start(message: Message):
                 f"Karta qo'shish uchun /add_card buyrug'ini yuboring."
             )
             return
+
+    await state.set_state(JoinOrg.unique_id)
     await message.answer(
         "Assalomu alaykum! Tashkilotga ulanish uchun "
-        "admin bergan havoladan foydalaning."
+        "tashkilot ID sini kiriting:"
     )
+
+
+@router.message(JoinOrg.unique_id)
+async def process_join_org(message: Message, state: FSMContext):
+    unique_id = message.text.strip()
+    if len(unique_id) != 16:
+        await message.answer("Tashkilot ID si 16 belgidan iborat bo'lishi kerak. Qayta kiriting:")
+        return
+    await state.clear()
+    await process_join(message, unique_id)
 
 
 @router.message(Command("add_card"))
 async def cmd_add_card(message: Message, state: FSMContext):
     session = await db.get_user_session(message.from_user.id)
     if not session:
-        await message.answer("Avval tashkilotga ulaning. Admin bergan havoladan foydalaning.")
+        await message.answer("Avval tashkilotga ulaning. /start buyrug'ini yuboring.")
         return
     await state.set_state(UserAddCard.fio)
     await state.update_data(org_id=session["org_id"], cards=[])

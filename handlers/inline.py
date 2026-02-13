@@ -33,7 +33,19 @@ async def inline_handler(query: InlineQuery):
         participants = await db.get_participants(session["org_id"])
 
     if not participants:
-        await query.answer(results=[], cache_time=5)
+        await query.answer(
+            results=[
+                InlineQueryResultArticle(
+                    id="empty",
+                    title="Ishtirokchilar yo'q",
+                    description="Admin orqali ishtirokchi qo'shing",
+                    input_message_content=InputTextMessageContent(
+                        message_text="Hozircha ishtirokchilar yo'q.",
+                    ),
+                )
+            ],
+            cache_time=5,
+        )
         return
 
     search = query.query.strip().lower()

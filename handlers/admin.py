@@ -13,6 +13,7 @@ from keyboards import (
     admin_menu, org_list, org_detail,
     participant_list, participant_detail,
     card_list_for_delete, done_button, format_card,
+    user_list,
 )
 
 router = Router()
@@ -429,3 +430,113 @@ async def cb_del_participant(callback: CallbackQuery):
             "Ishtirokchilar:",
             reply_markup=participant_list(participants, org_id)
         )
+
+
+# --- Ulanish so'rovlari (approve/deny) ---
+
+@router.callback_query(F.data.startswith("approve:"))
+async def cb_approve_join(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    parts = callback.data.split(":")
+    telegram_id = int(parts[1])
+    org_id = int(parts[2])
+
+    org = await db.get_org(org_id)
+    if not org:
+        await callback.message.edit_text("Tashkilot topilmadi.")
+        return
+
+    try:
+        chat = await callback.bot.get_chat(telegram_id)
+        full_name = chat.full_name
+        username = chat.username
+    except Exception:
+        full_name = None
+        username = None
+
+    await db.set_user_session(telegram_id, org_id, full_name, username)
+
+    await callback.message.edit_text(
+        callback.message.text + "\n\n✅ Tasdiqlandi!",
+        parse_mode="Markdown"
+    )
+
+    await callback.bot.send_message(
+        telegram_id,
+        f"Sizning so'rovingiz tasdiqlandi!\n"
+        f"Siz «{org['name']}» ga ulandingiz."
+    )
+
+
+@router.callback_query(F.data.startswith("deny:"))
+async def cb_deny_join(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    parts = callback.data.split(":")
+    telegram_id = int(parts[1])
+    org_id = int(parts[2])
+
+    org = await db.get_org(org_id)
+    org_name = org["name"] if org else "Noma'lum"
+
+    await callback.message.edit_text(
+        callback.message.text + "\n\n❌ Rad etildi!",
+        parse_mode="Markdown"
+    )
+
+    await callback.bot.send_message(
+        telegram_id,
+        f"Sizning «{org_name}» ga ulanish so'rovingiz rad etildi."
+    )
+
+
+# --- Foydalanuvchilar ro'yxati ---
+
+@router.callback_query(F.data.startswith("list_users:"))
+async def cb_list_users(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    org_id = int(callback.data.split(":")[1])
+    users = await db.get_org_users(org_id)
+    if not users:
+        await callback.message.edit_text(
+            "Foydalanuvchilar yo'q.",
+            reply_markup=org_detail(org_id)
+        )
+        return
+
+    await callback.message.edit_text(
+        f"Foydalanuvchilar ({len(users)} ta):\n"
+        f"O'chirish uchun ❌ tugmasini bosing.",
+        reply_markup=user_list(users, org_id)
+    )
+
+
+@router.callback_query(F.data.startswith("remove_user:"))
+async def cb_remove_user(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    parts = callback.data.split(":")
+    telegram_id = int(parts[1])
+    org_id = int(parts[2])
+    await db.delete_user_session(telegram_id)
+    await callback.answer("Foydalanuvchi o'chirildi!")
+
+    users = await db.get_org_users(org_id)
+    if not users:
+        await callback.message.edit_text(
+            "Foydalanuvchilar yo'q.",
+            reply_markup=org_detail(org_id)
+        )
+    else:
+        await callback.message.edit_text(
+            f"Foydalanuvchilar ({len(users)} ta):\n"
+            f"O'chirish uchun ❌ tugmasini bosing.",
+            reply_markup=user_list(users, org_id)
+        )
+
+
+@router.callback_query(F.data == "noop")
+async def cb_noop(callback: CallbackQuery):
+    await callback.answer()
