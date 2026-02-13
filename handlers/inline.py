@@ -1,3 +1,5 @@
+import os
+
 from aiogram import Router
 from aiogram.types import (
     InlineQuery,
@@ -9,22 +11,26 @@ import db
 from keyboards import format_card
 
 router = Router()
+ADMIN_ID = int(os.environ.get("ADMIN_ID", 0))
 
 
 @router.inline_query()
 async def inline_handler(query: InlineQuery):
-    session = await db.get_user_session(query.from_user.id)
-    if not session:
-        await query.answer(
-            results=[],
-            cache_time=5,
-            switch_pm_text="Avval tashkilotga ulaning",
-            switch_pm_parameter="start",
-        )
-        return
+    is_admin = query.from_user.id == ADMIN_ID
 
-    org_id = session["org_id"]
-    participants = await db.get_participants(org_id)
+    if is_admin:
+        participants = await db.get_all_participants()
+    else:
+        session = await db.get_user_session(query.from_user.id)
+        if not session:
+            await query.answer(
+                results=[],
+                cache_time=5,
+                switch_pm_text="Avval tashkilotga ulaning",
+                switch_pm_parameter="start",
+            )
+            return
+        participants = await db.get_participants(session["org_id"])
 
     if not participants:
         await query.answer(results=[], cache_time=5)
@@ -44,12 +50,17 @@ async def inline_handler(query: InlineQuery):
         cards_text = "\n".join(
             f"`{format_card(c['card_number'])}`" for c in cards
         )
+
+        if is_admin:
+            title = f"{p['fio']} ({p['org_name']})"
+        else:
+            title = p["fio"]
         message_text = f"{p['fio']}\n{cards_text}"
 
         results.append(
             InlineQueryResultArticle(
                 id=str(p["id"]),
-                title=p["fio"],
+                title=title,
                 description=f"{len(cards)} ta karta",
                 input_message_content=InputTextMessageContent(
                     message_text=message_text,

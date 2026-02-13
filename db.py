@@ -86,6 +86,13 @@ async def get_participants(org_id: int):
     )
 
 
+async def get_all_participants():
+    return await pool.fetch(
+        "SELECT p.*, o.name AS org_name FROM participants p "
+        "JOIN organizations o ON o.id = p.org_id ORDER BY p.id"
+    )
+
+
 async def get_participant(participant_id: int):
     return await pool.fetchrow("SELECT * FROM participants WHERE id = $1", participant_id)
 
