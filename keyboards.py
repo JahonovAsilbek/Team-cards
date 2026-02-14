@@ -1,19 +1,26 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton,
+)
 
 
 def format_card(card_number: str) -> str:
     return f"{card_number[:4]} {card_number[4:8]} {card_number[8:12]} {card_number[12:]}"
 
 
-# --- User menyu ---
+# --- Doimiy menyu (ReplyKeyboard) ---
+
+BTN_CREATE = "➕ Jamoa yaratish"
+BTN_MY_ORGS = "📋 Jamoalarim"
+
 
 def user_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="➕ Jamoa yaratish", callback_data="create_org"),
-            InlineKeyboardButton(text="📋 Jamoalarim", callback_data="my_orgs"),
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=BTN_CREATE), KeyboardButton(text=BTN_MY_ORGS)],
         ],
-    ])
+        resize_keyboard=True,
+    )
 
 
 def my_orgs_list(orgs):

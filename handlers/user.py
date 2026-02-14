@@ -14,6 +14,7 @@ from keyboards import (
     participant_list, participant_detail,
     card_list_for_delete, done_button, format_card,
     join_request, org_members_list,
+    BTN_CREATE, BTN_MY_ORGS,
 )
 
 router = Router()
@@ -60,23 +61,23 @@ async def cb_main_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Siz bloklangansiz.", show_alert=True)
         return
     await state.clear()
-    await callback.message.edit_text(
+    await callback.message.answer(
         "Quyidagi amallardan birini tanlang:",
         reply_markup=user_menu()
     )
 
 
 # ========================
-# Jamoa yaratish
+# Jamoa yaratish (reply keyboard)
 # ========================
 
-@router.callback_query(F.data == "create_org")
-async def cb_create_org(callback: CallbackQuery, state: FSMContext):
-    if await check_blocked(callback.from_user.id):
-        await callback.answer("Siz bloklangansiz.", show_alert=True)
+@router.message(F.text == BTN_CREATE)
+async def msg_create_org(message: Message, state: FSMContext):
+    if await check_blocked(message.from_user.id):
+        await message.answer("Siz bloklangansiz.")
         return
     await state.set_state(CreateOrg.name)
-    await callback.message.edit_text("Jamoa nomini kiriting:")
+    await message.answer("Jamoa nomini kiriting:")
 
 
 @router.message(CreateOrg.name)
@@ -103,8 +104,24 @@ async def process_create_org(message: Message, state: FSMContext):
 
 
 # ========================
-# Jamoalarim
+# Jamoalarim (reply keyboard + callback)
 # ========================
+
+@router.message(F.text == BTN_MY_ORGS)
+async def msg_my_orgs(message: Message, state: FSMContext):
+    if await check_blocked(message.from_user.id):
+        await message.answer("Siz bloklangansiz.")
+        return
+    await state.clear()
+    orgs = await db.get_user_orgs(message.from_user.id)
+    if not orgs:
+        await message.answer("Sizda jamoalar yo'q.")
+        return
+    await message.answer(
+        "Jamoalaringiz:",
+        reply_markup=my_orgs_list(orgs)
+    )
+
 
 @router.callback_query(F.data == "my_orgs")
 async def cb_my_orgs(callback: CallbackQuery, state: FSMContext):
@@ -114,15 +131,21 @@ async def cb_my_orgs(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     orgs = await db.get_user_orgs(callback.from_user.id)
     if not orgs:
-        await callback.message.edit_text(
-            "Sizda jamoalar yo'q.",
-            reply_markup=user_menu()
-        )
+        try:
+            await callback.message.edit_text("Sizda jamoalar yo'q.")
+        except Exception:
+            await callback.message.answer("Sizda jamoalar yo'q.")
         return
-    await callback.message.edit_text(
-        "Jamoalaringiz:",
-        reply_markup=my_orgs_list(orgs)
-    )
+    try:
+        await callback.message.edit_text(
+            "Jamoalaringiz:",
+            reply_markup=my_orgs_list(orgs)
+        )
+    except Exception:
+        await callback.message.answer(
+            "Jamoalaringiz:",
+            reply_markup=my_orgs_list(orgs)
+        )
 
 
 # ========================
@@ -262,10 +285,7 @@ async def cb_delete_org(callback: CallbackQuery):
     await callback.answer("Jamoa o'chirildi!")
     orgs = await db.get_user_orgs(callback.from_user.id)
     if not orgs:
-        await callback.message.edit_text(
-            "Sizda jamoalar yo'q.",
-            reply_markup=user_menu()
-        )
+        await callback.message.edit_text("Sizda jamoalar yo'q.")
     else:
         await callback.message.edit_text(
             "Jamoalaringiz:",
@@ -289,10 +309,7 @@ async def cb_leave_org(callback: CallbackQuery):
     await callback.answer("Jamoadan chiqdingiz!")
     orgs = await db.get_user_orgs(callback.from_user.id)
     if not orgs:
-        await callback.message.edit_text(
-            "Sizda jamoalar yo'q.",
-            reply_markup=user_menu()
-        )
+        await callback.message.edit_text("Sizda jamoalar yo'q.")
     else:
         await callback.message.edit_text(
             "Jamoalaringiz:",

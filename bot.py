@@ -41,10 +41,16 @@ async def on_shutdown_webhook(app):
     await bot.session.close()
 
 
+async def health(request):
+    return web.Response(text="ok")
+
+
 def run_webhook():
     app = web.Application()
     app.on_startup.append(on_startup_webhook)
     app.on_shutdown.append(on_shutdown_webhook)
+
+    app.router.add_get("/health", health)
 
     handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     handler.register(app, path="/webhook")
