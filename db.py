@@ -255,6 +255,56 @@ async def get_participants_for_user(telegram_id: int):
     )
 
 
+async def get_all_participants_with_cards():
+    """Barcha ishtirokchilar + kartalar — 1 ta so'rov (inline uchun)"""
+    rows = await pool.fetch(
+        """SELECT p.id AS pid, p.fio, o.name AS org_name,
+                  c.id AS card_id, c.card_number
+           FROM participants p
+           JOIN organizations o ON o.id = p.org_id
+           LEFT JOIN cards c ON c.participant_id = p.id
+           ORDER BY p.id, c.id"""
+    )
+    return _group_participants_cards(rows)
+
+
+async def get_participants_with_cards_for_user(telegram_id: int):
+    """User ishtirokchilari + kartalar — 1 ta so'rov (inline uchun)"""
+    rows = await pool.fetch(
+        """SELECT p.id AS pid, p.fio, o.name AS org_name,
+                  c.id AS card_id, c.card_number
+           FROM participants p
+           JOIN organizations o ON o.id = p.org_id
+           JOIN user_orgs uo ON uo.org_id = o.id
+           LEFT JOIN cards c ON c.participant_id = p.id
+           WHERE uo.telegram_id = $1
+           ORDER BY p.id, c.id""",
+        telegram_id
+    )
+    return _group_participants_cards(rows)
+
+
+def _group_participants_cards(rows):
+    """Querydan kelgan rowlarni {pid, fio, org_name, cards: [...]} ga guruh"""
+    participants = {}
+    for row in rows:
+        pid = row["pid"]
+        if pid not in participants:
+            participants[pid] = {
+                "id": pid,
+                "fio": row["fio"],
+                "org_name": row["org_name"],
+                "cards": []
+            }
+        if row["card_id"] is not None:
+            try:
+                card_num = decrypt_card(row["card_number"])
+            except Exception:
+                card_num = row["card_number"]
+            participants[pid]["cards"].append(card_num)
+    return list(participants.values())
+
+
 async def get_participant(participant_id: int):
     return await pool.fetchrow("SELECT * FROM participants WHERE id = $1", participant_id)
 
